@@ -1,0 +1,57 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: cpu-health-scripts
+data:
+  check-cpu-readiness.sh: |
+    #!/bin/sh
+    usage=$(top -bn1 | grep "Cpu(s)" | awk '{print 100 - $8}')
+    usage_int=$(printf "%.0f" "$usage")
+    echo "CPU Usage: $usage_int%"
+    if [ "$usage_int" -ge 90 ]; then
+      echo "CPU > 90% → NOT Ready"
+      exit 1
+    else
+      echo "CPU < 90% → Ready"
+      exit 0
+    fi
+
+  check-cpu-liveness.sh: |
+    #!/bin/sh
+    # Get current CPU usage (percentage used, not idle)
+    usage=$(top -bn1 | grep "Cpu(s)" | awk '{print 100 - $8}')
+    usage_int=$(printf "%.0f" "$usage")
+    echo "CPU Usage: $usage_int%"
+
+    # Count the number of established TCP connections
+    tcp_conn_count=$(netstat -ant | grep ESTABLISHED | wc -l)
+    echo "Established TCP connections: $tcp_conn_count"
+
+    # Condition 1: If CPU usage is 100%, fail liveness
+    if [ "$usage_int" -ge 100 ]; then
+      echo "CPU = 100% → Liveness FAILED"
+      exit 1
+    fi
+
+    # Condition 2: If CPU >= 90% and no TCP connections, fail liveness
+    if [ "$usage_int" -ge 90 ] && [ "$tcp_conn_count" -eq 0 ]; then
+      echo "CPU >= 90% and 0 TCP connections → Liveness FAILED"
+      exit 1
+    fi
+
+    # If all conditions are OK, liveness is successful
+    echo "CPU and connection status are healthy → Liveness OK"
+    exit 0
+    
+
+  check-startup.sh: |
+    #!/bin/bash
+    # Check if nginx process is running
+    ps aux | grep nginx | grep -v grep > /dev/null
+    if [ $? -eq 0 ]; then
+      echo "Nginx is running"
+      exit 0
+    else
+      echo "Waiting for Nginx to start..."
+      exit 1
+    fi

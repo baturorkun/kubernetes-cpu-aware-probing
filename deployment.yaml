@@ -1,0 +1,63 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: cpu-sensitive-app
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: cpu-sensitive-app
+  template:
+    metadata:
+      labels:
+        app: cpu-sensitive-app
+    spec:
+      containers:
+      - name: myapp
+        image: nginx:1.25
+        resources:
+          requests:
+            cpu: 100m
+            #memory: 50Mi
+          limits:
+            cpu: 500m
+            #memory: 100Mi
+        command: [ "/bin/sh", "-c" ]
+        args:
+          - |
+            apt update && \
+            apt install -y procps net-tools coreutils iproute2 stress && \
+            nginx -g 'daemon off;'
+        volumeMounts:
+        - name: health-checks
+          mountPath: /health
+
+        startupProbe:
+          exec:
+            command: ["/bin/sh", "-c", "/health/check-startup.sh"]
+          initialDelaySeconds: 30
+          periodSeconds: 5
+          failureThreshold: 10
+
+        readinessProbe:
+          exec:
+            command: ["/bin/sh", "-c", "/health/check-cpu-readiness.sh"]
+          initialDelaySeconds: 15
+          periodSeconds: 10
+          failureThreshold: 3
+          successThreshold: 1
+          timeoutSeconds: 3
+
+        livenessProbe:
+          exec:
+            command: ["/bin/sh", "-c", "/health/check-cpu-liveness.sh"]
+          initialDelaySeconds: 15
+          periodSeconds: 10
+          failureThreshold: 3
+          timeoutSeconds: 3
+
+      volumes:
+      - name: health-checks
+        configMap:
+          name: cpu-health-scripts
+          defaultMode: 0755
